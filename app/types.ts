@@ -4,6 +4,7 @@ export interface ExifData {
   fNumber?: string;
   shutterSpeed?: string;
   focalLength?: string;
+  focalLengthIn35mm?: string;
   iso?: string;
   dateTime?: string;
   copyright?: string;
@@ -23,4 +24,5 @@ export interface AppConfig {
   alterBrightness: "dim" | "brighten";
   location: string;
   customCopyright: string;
+  exportFormat: "jpeg" | "png" | "webp";
 }
