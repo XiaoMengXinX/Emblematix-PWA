@@ -10,6 +10,16 @@ export interface ExifData {
   copyright?: string;
 }
 
+export interface EditableMetadata {
+  manufacturer: string;
+  model: string;
+  fNumber: string;
+  shutterSpeed: string;
+  focalLength: string;
+  iso: string;
+  dateTime: string;
+}
+
 export interface AppConfig {
   showManufacturer: boolean;
   showModel: boolean;
@@ -27,4 +37,6 @@ export interface AppConfig {
   exportFormat: "jpeg" | "png" | "webp";
   font: string;
   fontWeight: string;
+  useCustomCopyright: boolean; // Track if using custom or EXIF copyright
+  useCustomLocation: boolean; // Track if using custom or EXIF GPS location
 }

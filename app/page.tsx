@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import ExifReader from "exifreader";
-import { ExifData, AppConfig } from "./types";
+import { ExifData, AppConfig, EditableMetadata } from "./types";
 import { saveFont, getFonts, deleteFont } from "./db";
 import clsx from "clsx";
 import { Inter, Roboto, Playfair_Display, Space_Mono } from 'next/font/google';
@@ -50,6 +50,8 @@ const defaultConfig: AppConfig = {
   exportFormat: "jpeg",
   font: "inter",
   fontWeight: "400",
+  useCustomCopyright: false, // Default to using EXIF copyright
+  useCustomLocation: false, // Default to using EXIF GPS location
 };
 
 export default function Home() {
@@ -67,10 +69,64 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [customFonts, setCustomFonts] = useState<{ name: string, style: string }[]>([]);
   const [isFontSettingsOpen, setIsFontSettingsOpen] = useState(false);
+  const [isMetadataSettingsOpen, setIsMetadataSettingsOpen] = useState(false);
+
+  // Editable metadata state (session-only, not persisted)
+  const [editableMetadata, setEditableMetadata] = useState<EditableMetadata>({
+    manufacturer: "",
+    model: "",
+    fNumber: "",
+    shutterSpeed: "",
+    focalLength: "",
+    iso: "",
+    dateTime: "",
+  });
+
+  // Local metadata state for apply mechanism (similar to localLocation/localCustomCopyright)
+  const [localEditableMetadata, setLocalEditableMetadata] = useState<EditableMetadata>({
+    manufacturer: "",
+    model: "",
+    fNumber: "",
+    shutterSpeed: "",
+    focalLength: "",
+    iso: "",
+    dateTime: "",
+  });
+
+  // Track EXIF copyright separately (not persisted to localStorage)
+  const [exifCopyright, setExifCopyright] = useState<string>("");
+
+  // Track EXIF GPS location separately (not persisted to localStorage)
+  const [exifLocation, setExifLocation] = useState<string>("");
+
+  // Track previous EXIF manufacturer/model for smart persistence
+  const [prevManufacturerModel, setPrevManufacturerModel] = useState<{ manufacturer?: string, model?: string }>({});
 
   const handleReset = () => {
     setConfig(defaultConfig);
     localStorage.removeItem("emblematix_config");
+  };
+
+  // Helper function to convert GPS coordinates to DMS format
+  const convertToDMS = (lat: number, lon: number): string => {
+    const formatCoordinate = (value: number, isLatitude: boolean): string => {
+      const absolute = Math.abs(value);
+      const degrees = Math.floor(absolute);
+      const minutesDecimal = (absolute - degrees) * 60;
+      const minutes = Math.floor(minutesDecimal);
+      const seconds = Math.round((minutesDecimal - minutes) * 60);
+
+      let direction: string;
+      if (isLatitude) {
+        direction = value >= 0 ? 'N' : 'S';
+      } else {
+        direction = value >= 0 ? 'E' : 'W';
+      }
+
+      return `${degrees}°${minutes}'${seconds}"${direction}`;
+    };
+
+    return `${formatCoordinate(lat, true)} ${formatCoordinate(lon, false)}`;
   };
 
   useEffect(() => {
@@ -81,6 +137,11 @@ export default function Home() {
       setLocalCustomCopyright(config.customCopyright);
     }
   }, [config.location, config.customCopyright]);
+
+  // Sync localEditableMetadata with editableMetadata when it changes
+  useEffect(() => {
+    setLocalEditableMetadata(editableMetadata);
+  }, [editableMetadata]);
 
   useEffect(() => {
     setMounted(true);
@@ -111,7 +172,18 @@ export default function Home() {
   // Save config to localStorage whenever it changes
   useEffect(() => {
     if (mounted) {
-      localStorage.setItem("emblematix_config", JSON.stringify(config));
+      // Only save customCopyright if user is using custom mode
+      // Only save location if user is using custom mode
+      const configToSave = { ...config };
+      if (!config.useCustomCopyright) {
+        // Don't persist EXIF copyright to localStorage
+        configToSave.customCopyright = "";
+      }
+      if (!config.useCustomLocation) {
+        // Don't persist EXIF GPS location to localStorage
+        configToSave.location = "";
+      }
+      localStorage.setItem("emblematix_config", JSON.stringify(configToSave));
     }
   }, [config, mounted]);
 
@@ -163,19 +235,20 @@ export default function Home() {
       ctx.drawImage(img, 0, 0);
 
       // Prepare text
+      // Use editable metadata (which may contain user edits or EXIF data)
       const deviceText = [
-        config.showManufacturer && exifData.manufacturer,
-        config.showModel && exifData.model,
+        config.showManufacturer && editableMetadata.manufacturer,
+        config.showModel && editableMetadata.model,
       ]
         .filter(Boolean)
         .join(" ")
         .trim();
 
       const photoInfoText = [
-        config.showFNumber && exifData.fNumber && (exifData.fNumber.toLowerCase().startsWith('f') ? exifData.fNumber : `f/${exifData.fNumber}`),
-        config.showShutterSpeed && exifData.shutterSpeed && `${exifData.shutterSpeed}`,
-        config.showFocalLength && exifData.focalLength && (exifData.focalLength.endsWith('mm') ? exifData.focalLength : `${exifData.focalLength}mm`),
-        config.showISO && exifData.iso && `ISO${exifData.iso}`,
+        config.showFNumber && editableMetadata.fNumber && (editableMetadata.fNumber.toLowerCase().startsWith('f') ? editableMetadata.fNumber : `f/${editableMetadata.fNumber}`),
+        config.showShutterSpeed && editableMetadata.shutterSpeed && `${editableMetadata.shutterSpeed}`,
+        config.showFocalLength && editableMetadata.focalLength && (editableMetadata.focalLength.endsWith('mm') ? editableMetadata.focalLength : `${editableMetadata.focalLength}mm`),
+        config.showISO && editableMetadata.iso && `ISO${editableMetadata.iso}`,
       ]
         .filter(Boolean)
         .join(" • ");
@@ -184,10 +257,10 @@ export default function Home() {
       let copyrightString = "";
       let timeString = "";
 
-      if (exifData.dateTime) {
+      if (editableMetadata.dateTime) {
         // Android format: yyyy|MM/dd HH:mm:ss
         // ExifReader usually returns "yyyy:MM:dd HH:mm:ss"
-        const parts = exifData.dateTime.split(" ");
+        const parts = editableMetadata.dateTime.split(" ");
         if (parts.length >= 2) {
           const dateParts = parts[0].split(":");
           const timePart = parts[1];
@@ -203,7 +276,11 @@ export default function Home() {
             }
 
             if (config.showCopyright) {
-              const author = config.customCopyright || exifData.copyright || "";
+              // Use custom copyright if in Custom mode, otherwise use EXIF
+              // In Custom mode, even empty string should be used (not fall back to EXIF)
+              const author = config.useCustomCopyright
+                ? config.customCopyright
+                : (config.customCopyright || exifData.copyright || "");
               if (author !== "") {
                 // Android: Image © yyyy Author.
                 copyrightString = `Image © ${year} ${author}.`;
@@ -212,7 +289,10 @@ export default function Home() {
           }
         }
       } else if (config.showCopyright) {
-        const author = config.customCopyright || exifData.copyright || "";
+        // Use custom copyright if in Custom mode, otherwise use EXIF
+        const author = config.useCustomCopyright
+          ? config.customCopyright
+          : (config.customCopyright || exifData.copyright || "");
         if (author !== "") {
           copyrightString = `Image © ${author}.`;
         }
@@ -382,7 +462,7 @@ export default function Home() {
     return () => {
       isCancelled = true;
     };
-  }, [image, exifData, config, customFonts]);
+  }, [image, exifData, config, customFonts, editableMetadata]);
 
   const processFile = async (file: File) => {
     let imageUrl = "";
@@ -471,6 +551,68 @@ export default function Home() {
       }
 
       setExifData(newExifData);
+
+      // Populate editable metadata from EXIF data
+      // Smart persistence: keep custom manufacturer/model if EXIF matches previous image
+      const shouldKeepManufacturer =
+        prevManufacturerModel.manufacturer === newExifData.manufacturer &&
+        editableMetadata.manufacturer !== "";
+      const shouldKeepModel =
+        prevManufacturerModel.model === newExifData.model &&
+        editableMetadata.model !== "";
+
+      setEditableMetadata({
+        manufacturer: shouldKeepManufacturer ? editableMetadata.manufacturer : (newExifData.manufacturer || ""),
+        model: shouldKeepModel ? editableMetadata.model : (newExifData.model || ""),
+        fNumber: newExifData.fNumber || "",
+        shutterSpeed: shutterSpeed || "",
+        focalLength: focalLength || "",
+        iso: newExifData.iso || "",
+        dateTime: newExifData.dateTime || "",
+      });
+
+      // Update previous manufacturer/model for next comparison
+      setPrevManufacturerModel({
+        manufacturer: newExifData.manufacturer,
+        model: newExifData.model,
+      });
+
+      // Handle EXIF copyright
+      const copyrightFromExif = newExifData.copyright || "";
+      setExifCopyright(copyrightFromExif);
+
+      // If not using custom copyright, populate with EXIF copyright
+      if (!config.useCustomCopyright) {
+        setConfig(prev => ({ ...prev, customCopyright: copyrightFromExif }));
+        setLocalCustomCopyright(copyrightFromExif);
+      }
+
+      // Handle EXIF GPS location
+      let locationFromExif = "";
+      const gpsLat = tags["GPSLatitude"]?.description;
+      const gpsLon = tags["GPSLongitude"]?.description;
+
+      if (gpsLat && gpsLon) {
+        try {
+          // Parse GPS coordinates (they might be in different formats)
+          const latValue = parseFloat(gpsLat);
+          const lonValue = parseFloat(gpsLon);
+
+          if (!isNaN(latValue) && !isNaN(lonValue)) {
+            locationFromExif = convertToDMS(latValue, lonValue);
+          }
+        } catch (e) {
+          console.error("Failed to parse GPS coordinates:", e);
+        }
+      }
+
+      setExifLocation(locationFromExif);
+
+      // If not using custom location, populate with EXIF GPS location
+      if (!config.useCustomLocation && locationFromExif) {
+        setConfig(prev => ({ ...prev, location: locationFromExif }));
+        setLocalLocation(locationFromExif);
+      }
     } catch (error) {
       console.error("Error reading EXIF data:", error);
       toast.error("Failed to read EXIF data from image.");
@@ -574,21 +716,31 @@ export default function Home() {
         <p className="text-xl font-bold">
           Emblematix
         </p>
-        <a
-          className="flex place-items-center gap-2 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-          href="https://github.com/XiaoMengXinX/Emblematix-PWA"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="GitHub"
-        >
-          <svg
-            viewBox="0 0 1024 1024"
-            className="w-6 h-6 fill-current"
-            xmlns="http://www.w3.org/2000/svg"
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownload}
+            disabled={!processedImage}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm shadow-sm hover:shadow-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
           >
-            <path d="M511.6 76.3C264.3 76.2 64 276.4 64 523.5 64 718.9 189.3 885 363.8 946c23.5 5.9 19.9-10.8 19.9-22.2v-77.5c-135.7 15.9-141.2-73.9-150.3-88.9C215 726 171.5 718 184.5 703c30.9-15.9 62.4 4 98.9 57.9 26.4 39.1 77.9 32.5 104 26 5.7-23.5 17.9-44.5 34.7-60.8-140.6-25.2-199.2-111-199.2-213 0-49.5 16.3-95 48.3-131.7-20.4-60.5 1.9-112.3 4.9-120 58.1-5.2 118.5 41.6 123.2 45.3 33-8.9 70.7-13.6 112.9-13.6 42.4 0 80.2 4.9 113.5 13.9 11.3-8.6 67.3-48.8 121.3-43.9 2.9 7.7 24.7 58.3 5.5 118 32.4 36.8 48.9 82.7 48.9 132.3 0 102.2-59 188.1-200 212.9a127.5 127.5 0 0 1 38.1 91v112.5c.8 9 0 17.9 15 17.9 177.1-59.7 304.6-227 304.6-424.1 0-247.2-200.4-447.3-447.5-447.3z" />
-          </svg>
-        </a>
+            <Download className="w-4 h-4" />
+            Save Image
+          </button>
+          <a
+            className="flex place-items-center gap-2 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            href="https://github.com/XiaoMengXinX/Emblematix-PWA"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub"
+          >
+            <svg
+              viewBox="0 0 1024 1024"
+              className="w-6 h-6 fill-current"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M511.6 76.3C264.3 76.2 64 276.4 64 523.5 64 718.9 189.3 885 363.8 946c23.5 5.9 19.9-10.8 19.9-22.2v-77.5c-135.7 15.9-141.2-73.9-150.3-88.9C215 726 171.5 718 184.5 703c30.9-15.9 62.4 4 98.9 57.9 26.4 39.1 77.9 32.5 104 26 5.7-23.5 17.9-44.5 34.7-60.8-140.6-25.2-199.2-111-199.2-213 0-49.5 16.3-95 48.3-131.7-20.4-60.5 1.9-112.3 4.9-120 58.1-5.2 118.5 41.6 123.2 45.3 33-8.9 70.7-13.6 112.9-13.6 42.4 0 80.2 4.9 113.5 13.9 11.3-8.6 67.3-48.8 121.3-43.9 2.9 7.7 24.7 58.3 5.5 118 32.4 36.8 48.9 82.7 48.9 132.3 0 102.2-59 188.1-200 212.9a127.5 127.5 0 0 1 38.1 91v112.5c.8 9 0 17.9 15 17.9 177.1-59.7 304.6-227 304.6-424.1 0-247.2-200.4-447.3-447.3z" />
+            </svg>
+          </a>
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row w-full max-w-6xl gap-6 lg:gap-8 flex-grow items-start">
@@ -598,7 +750,7 @@ export default function Home() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           className={clsx(
-            "flex-1 flex flex-col items-center justify-center min-h-[300px] md:min-h-[500px] lg:min-h-[740px] bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border-2 p-4 relative overflow-hidden w-full transition-colors",
+            "flex-1 flex flex-col items-center justify-center min-h-[300px] md:min-h-[500px] lg:min-h-[700px] bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border-2 p-4 relative overflow-hidden w-full transition-colors",
             isDragging
               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
               : "border-neutral-200 dark:border-neutral-700"
@@ -652,14 +804,6 @@ export default function Home() {
 
         {/* Configuration Panel */}
         <div className="w-full lg:w-96 flex flex-col gap-4 pb-8 lg:pb-0">
-          <button
-            onClick={handleDownload}
-            disabled={!processedImage}
-            className="w-full py-4 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-2xl font-bold text-lg shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed lg:hidden"
-          >
-            <Download className="w-5 h-5" />
-            Save Image
-          </button>
 
           <div className="bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border border-neutral-200 dark:border-neutral-700 p-6">
             <div className="flex justify-between items-center mb-4">
@@ -819,6 +963,87 @@ export default function Home() {
 
               <div className="space-y-2">
                 <button
+                  onClick={() => setIsMetadataSettingsOpen(!isMetadataSettingsOpen)}
+                  className="w-full flex items-center justify-between p-3 bg-neutral-100 dark:bg-neutral-700/50 rounded-xl hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                >
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Metadata Settings</span>
+                    <span className="text-xs text-neutral-400">
+                      {Object.values(editableMetadata).filter(v => v !== "").length} field{Object.values(editableMetadata).filter(v => v !== "").length !== 1 ? 's' : ''} filled
+                    </span>
+                  </div>
+                  <ChevronDown
+                    className={clsx(
+                      "w-5 h-5 text-neutral-500 transition-transform duration-300",
+                      isMetadataSettingsOpen ? "rotate-180" : "rotate-0"
+                    )}
+                  />
+                </button>
+
+                <div
+                  className={clsx(
+                    "grid transition-[grid-template-rows] duration-300 ease-in-out",
+                    isMetadataSettingsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                  )}
+                >
+                  <div className="overflow-hidden">
+                    <div className="p-4 bg-neutral-50 dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-700 space-y-4 mt-2">
+                      {[
+                        { key: 'manufacturer', label: 'Manufacturer', placeholder: 'e.g. Canon' },
+                        { key: 'model', label: 'Model', placeholder: 'e.g. EOS R5' },
+                        { key: 'fNumber', label: 'F Number', placeholder: 'e.g. f/2.8 or 2.8' },
+                        { key: 'shutterSpeed', label: 'Shutter Speed', placeholder: 'e.g. 1/250' },
+                        { key: 'focalLength', label: 'Focal Length', placeholder: 'e.g. 50mm or 50' },
+                        { key: 'iso', label: 'ISO', placeholder: 'e.g. 100' },
+                        { key: 'dateTime', label: 'Date & Time', placeholder: 'e.g. 2024:12:08 12:30:00' },
+                      ].map(({ key, label, placeholder }) => (
+                        <div key={key} className="space-y-2">
+                          <label className="text-xs font-medium text-neutral-500 uppercase tracking-wider">{label}</label>
+                          <div className="relative w-full">
+                            <input
+                              type="text"
+                              value={localEditableMetadata[key as keyof EditableMetadata]}
+                              onChange={(e) => setLocalEditableMetadata({
+                                ...localEditableMetadata,
+                                [key]: e.target.value,
+                              })}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  setEditableMetadata({
+                                    ...editableMetadata,
+                                    [key]: localEditableMetadata[key as keyof EditableMetadata],
+                                  });
+                                }
+                              }}
+                              onBlur={() => setEditableMetadata({
+                                ...editableMetadata,
+                                [key]: localEditableMetadata[key as keyof EditableMetadata],
+                              })}
+                              className="w-full px-3 pr-10 py-2 rounded-lg text-sm border transition-all outline-none bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                              placeholder={placeholder}
+                            />
+                            {localEditableMetadata[key as keyof EditableMetadata] !== editableMetadata[key as keyof EditableMetadata] && (
+                              <button
+                                onClick={() => setEditableMetadata({
+                                  ...editableMetadata,
+                                  [key]: localEditableMetadata[key as keyof EditableMetadata],
+                                })}
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg border border-transparent transition-colors text-neutral-500 hover:bg-blue-100 hover:text-blue-700 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-300 dark:hover:border-blue-800"
+                                aria-label={`Apply ${label}`}
+                              >
+                                <Check className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <button
                   onClick={() => setIsFontSettingsOpen(!isFontSettingsOpen)}
                   className="w-full flex items-center justify-between p-3 bg-neutral-100 dark:bg-neutral-700/50 rounded-xl hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
                 >
@@ -933,7 +1158,39 @@ export default function Home() {
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Location</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Location</label>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setConfig({ ...config, useCustomLocation: false, location: exifLocation });
+                          setLocalLocation(exifLocation);
+                        }}
+                        className={clsx(
+                          "px-2 py-1 rounded text-xs font-medium transition-colors",
+                          !config.useCustomLocation
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            : "bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-600"
+                        )}
+                      >
+                        EXIF
+                      </button>
+                      <button
+                        onClick={() => {
+                          setConfig({ ...config, useCustomLocation: true, location: "" });
+                          setLocalLocation("");
+                        }}
+                        className={clsx(
+                          "px-2 py-1 rounded text-xs font-medium transition-colors",
+                          config.useCustomLocation
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            : "bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-600"
+                        )}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                  </div>
                   <div className="relative w-full">
                     <input
                       type="text"
@@ -945,10 +1202,16 @@ export default function Home() {
                         }
                       }}
                       onBlur={() => setConfig({ ...config, location: localLocation })}
-                      className="w-full px-4 pr-12 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-transparent focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                      placeholder="e.g. Shanghai, China"
+                      disabled={!config.useCustomLocation}
+                      className={clsx(
+                        "w-full px-4 pr-12 py-2 rounded-lg border transition-all outline-none",
+                        config.useCustomLocation
+                          ? "bg-neutral-100 dark:bg-neutral-700 border-transparent focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                          : "bg-neutral-100 dark:bg-neutral-700/50 border-transparent text-neutral-400 cursor-not-allowed"
+                      )}
+                      placeholder={config.useCustomLocation ? "e.g. Shanghai, China" : (exifLocation || "No GPS data")}
                     />
-                    {localLocation !== config.location && (
+                    {localLocation !== config.location && config.useCustomLocation && (
                       <button
                         onClick={() => setConfig({ ...config, location: localLocation })}
                         className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg border border-transparent transition-colors text-neutral-500 hover:bg-blue-100 hover:text-blue-700 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-300 dark:hover:border-blue-800"
@@ -961,7 +1224,36 @@ export default function Home() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Copyright</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Copyright</label>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setConfig({ ...config, useCustomCopyright: false, customCopyright: exifCopyright });
+                          setLocalCustomCopyright(exifCopyright);
+                        }}
+                        className={clsx(
+                          "px-2 py-1 rounded text-xs font-medium transition-colors",
+                          !config.useCustomCopyright
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            : "bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-600"
+                        )}
+                      >
+                        EXIF
+                      </button>
+                      <button
+                        onClick={() => setConfig({ ...config, useCustomCopyright: true })}
+                        className={clsx(
+                          "px-2 py-1 rounded text-xs font-medium transition-colors",
+                          config.useCustomCopyright
+                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            : "bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400 hover:bg-neutral-300 dark:hover:bg-neutral-600"
+                        )}
+                      >
+                        Custom
+                      </button>
+                    </div>
+                  </div>
                   <div className="relative w-full">
                     <input
                       type="text"
@@ -975,10 +1267,16 @@ export default function Home() {
                       onBlur={() =>
                         setConfig({ ...config, customCopyright: localCustomCopyright })
                       }
-                      className="w-full px-4 pr-12 py-2 rounded-lg bg-neutral-100 dark:bg-neutral-700 border border-transparent focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                      placeholder="e.g. John Doe"
+                      disabled={!config.useCustomCopyright}
+                      className={clsx(
+                        "w-full px-4 pr-12 py-2 rounded-lg border transition-all outline-none",
+                        config.useCustomCopyright
+                          ? "bg-neutral-100 dark:bg-neutral-700 border-transparent focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                          : "bg-neutral-100 dark:bg-neutral-700/50 border-transparent text-neutral-400 cursor-not-allowed"
+                      )}
+                      placeholder={config.useCustomCopyright ? "e.g. John Doe" : (exifCopyright || "No EXIF copyright")}
                     />
-                    {localCustomCopyright !== config.customCopyright && (
+                    {localCustomCopyright !== config.customCopyright && config.useCustomCopyright && (
                       <button
                         onClick={() =>
                           setConfig({ ...config, customCopyright: localCustomCopyright })
@@ -995,14 +1293,6 @@ export default function Home() {
             </div>
           </div>
 
-          <button
-            onClick={handleDownload}
-            disabled={!processedImage}
-            className="w-full py-4 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-2xl font-bold text-lg shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all hidden lg:flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Download className="w-5 h-5" />
-            Save Image
-          </button>
         </div>
       </div>
     </main>
