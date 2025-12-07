@@ -145,7 +145,7 @@ export default function Home() {
     if (!image || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
     const img = new Image();
@@ -288,7 +288,7 @@ export default function Home() {
         const tempCanvas = document.createElement("canvas");
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
-        const tempCtx = tempCanvas.getContext("2d");
+        const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true });
         if (!tempCtx) return;
 
         let selectedFont = fonts[config.font as keyof typeof fonts];
@@ -377,8 +377,34 @@ export default function Home() {
   }, [image, exifData, config, customFonts]);
 
   const processFile = async (file: File) => {
-    const imageUrl = URL.createObjectURL(file);
+    let imageUrl = "";
+
+    // Check if file is HEIC/HEIF
+    const isHeic = file.type === "image/heic" ||
+      file.type === "image/heif" ||
+      file.name.toLowerCase().endsWith(".heic") ||
+      file.name.toLowerCase().endsWith(".heif") ||
+      file.name.toLowerCase().endsWith(".hif");
+
+    if (isHeic) {
+      setIsProcessing(true);
+      try {
+        // Try native support first. If this succeeds, the browser (e.g. Safari) supports HEIC natively.
+        const bitmap = await createImageBitmap(file);
+        bitmap.close();
+        imageUrl = URL.createObjectURL(file);
+      } catch (e) {
+        console.error("Native HEIC support check failed:", e);
+        toast.error("This browser does not support HEIC/HIF images natively.");
+        setIsProcessing(false);
+        return;
+      }
+    } else {
+      imageUrl = URL.createObjectURL(file);
+    }
+
     setImage(imageUrl);
+    setIsProcessing(false);
 
     try {
       const tags = await ExifReader.load(file);
