@@ -648,8 +648,9 @@ export default function Home() {
 
       setExifLocation(locationFromExif);
 
-      // If not using custom location, populate with EXIF GPS location
-      if (!config.useCustomLocation && locationFromExif) {
+      // If not using custom location, always update with EXIF GPS location (even if empty)
+      // This ensures new images without GPS don't inherit previous image's GPS data
+      if (!config.useCustomLocation) {
         setConfig(prev => ({ ...prev, location: locationFromExif }));
         setLocalLocation(locationFromExif);
       }
@@ -726,7 +727,7 @@ export default function Home() {
     if (!canvasRef.current) return;
 
     const format = config.exportFormat;
-    const mimeType = `image/${format}`;
+    const mimeType = `image / ${format} `;
     const quality = format === "jpeg" ? 0.99 : undefined;
 
     // Generate high quality image for download
@@ -735,7 +736,7 @@ export default function Home() {
         if (blob) {
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
-          link.download = `Emblematix_${Date.now()}.${format}`;
+          link.download = `Emblematix_${Date.now()}.${format} `;
           link.href = url;
           link.click();
           URL.revokeObjectURL(url);
@@ -1074,7 +1075,7 @@ export default function Home() {
                                   [key]: localEditableMetadata[key as keyof EditableMetadata],
                                 })}
                                 className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg border border-transparent transition-colors text-neutral-500 hover:bg-blue-100 hover:text-blue-700 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-300 dark:hover:border-blue-800"
-                                aria-label={`Apply ${label}`}
+                                aria-label={`Apply ${label} `}
                               >
                                 <Check className="w-4 h-4" />
                               </button>
