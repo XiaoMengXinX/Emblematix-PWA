@@ -750,7 +750,7 @@ export default function Home() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           className={clsx(
-            "flex-1 flex flex-col items-center justify-center min-h-[300px] md:min-h-[500px] lg:min-h-[700px] bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border-2 p-4 relative overflow-hidden w-full transition-colors",
+            "flex-1 flex flex-col items-center justify-center min-h-[300px] md:min-h-[500px] lg:h-[calc(100vh-12rem)] bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border-2 p-4 relative overflow-hidden w-full transition-colors",
             isDragging
               ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
               : "border-neutral-200 dark:border-neutral-700"
@@ -805,7 +805,7 @@ export default function Home() {
         {/* Configuration Panel */}
         <div className="w-full lg:w-96 flex flex-col gap-4 pb-8 lg:pb-0">
 
-          <div className="bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border border-neutral-200 dark:border-neutral-700 p-6">
+          <div className="bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border border-neutral-200 dark:border-neutral-700 py-6 pl-6 pr-3 md:min-h-[500px] lg:h-[calc(100vh-12rem)] lg:overflow-y-auto [scrollbar-gutter:stable] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <Settings className="w-5 h-5" />
@@ -963,7 +963,12 @@ export default function Home() {
 
               <div className="space-y-2">
                 <button
-                  onClick={() => setIsMetadataSettingsOpen(!isMetadataSettingsOpen)}
+                  onClick={() => {
+                    setIsMetadataSettingsOpen(!isMetadataSettingsOpen);
+                    if (!isMetadataSettingsOpen) {
+                      setIsFontSettingsOpen(false);
+                    }
+                  }}
                   className="w-full flex items-center justify-between p-3 bg-neutral-100 dark:bg-neutral-700/50 rounded-xl hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
                 >
                   <div className="flex flex-col items-start">
@@ -1044,7 +1049,12 @@ export default function Home() {
 
               <div className="space-y-2">
                 <button
-                  onClick={() => setIsFontSettingsOpen(!isFontSettingsOpen)}
+                  onClick={() => {
+                    setIsFontSettingsOpen(!isFontSettingsOpen);
+                    if (!isFontSettingsOpen) {
+                      setIsMetadataSettingsOpen(false);
+                    }
+                  }}
                   className="w-full flex items-center justify-between p-3 bg-neutral-100 dark:bg-neutral-700/50 rounded-xl hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
                 >
                   <div className="flex flex-col items-start">
