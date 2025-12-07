@@ -105,6 +105,46 @@ export default function Home() {
   const handleReset = () => {
     setConfig(defaultConfig);
     localStorage.removeItem("emblematix_config");
+
+    // If we have EXIF data from current image, restore metadata from it
+    // Otherwise, clear to empty
+    if (exifData && Object.values(exifData).some(v => v)) {
+      setEditableMetadata({
+        manufacturer: exifData.manufacturer || "",
+        model: exifData.model || "",
+        fNumber: exifData.fNumber || "",
+        shutterSpeed: exifData.shutterSpeed || "",
+        focalLength: exifData.focalLength || "",
+        iso: exifData.iso || "",
+        dateTime: exifData.dateTime || "",
+      });
+      setLocalEditableMetadata({
+        manufacturer: exifData.manufacturer || "",
+        model: exifData.model || "",
+        fNumber: exifData.fNumber || "",
+        shutterSpeed: exifData.shutterSpeed || "",
+        focalLength: exifData.focalLength || "",
+        iso: exifData.iso || "",
+        dateTime: exifData.dateTime || "",
+      });
+    } else {
+      // No EXIF data, clear to empty
+      const emptyMetadata: EditableMetadata = {
+        manufacturer: "",
+        model: "",
+        fNumber: "",
+        shutterSpeed: "",
+        focalLength: "",
+        iso: "",
+        dateTime: "",
+      };
+      setEditableMetadata(emptyMetadata);
+      setLocalEditableMetadata(emptyMetadata);
+    }
+
+    // Reset to EXIF mode for Copyright and Location
+    setLocalCustomCopyright(exifCopyright);
+    setLocalLocation(exifLocation);
   };
 
   // Helper function to convert GPS coordinates to DMS format
