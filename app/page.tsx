@@ -80,7 +80,7 @@ export default function Home() {
     if (localCustomCopyright !== config.customCopyright) {
       setLocalCustomCopyright(config.customCopyright);
     }
-  }, [config.location, config.customCopyright, localLocation, localCustomCopyright]);
+  }, [config.location, config.customCopyright]);
 
   useEffect(() => {
     setMounted(true);
