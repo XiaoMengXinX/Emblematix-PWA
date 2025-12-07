@@ -21,6 +21,7 @@
 
 html,
 body {
+  scrollbar-gutter: stable;
   height: 100vh; /* Fallback for browsers that don't support --vh */
   height: calc(var(--vh, 1vh) * 100);
   margin: 0;

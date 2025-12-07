@@ -8,10 +8,29 @@ import {
   Image as ImageIcon,
   Check,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
 } from "lucide-react";
 import ExifReader from "exifreader";
 import { ExifData, AppConfig } from "./types";
+import { saveFont, getFonts, deleteFont } from "./db";
 import clsx from "clsx";
+import { Inter, Roboto, Playfair_Display, Space_Mono } from 'next/font/google';
+
+const inter = Inter({ subsets: ['latin'] });
+const roboto = Roboto({ weight: ['400', '700'], subsets: ['latin'] });
+const playfair = Playfair_Display({ subsets: ['latin'] });
+const spaceMono = Space_Mono({ weight: ['400', '700'], subsets: ['latin'] });
+
+const fonts = {
+  inter: { name: 'Inter', className: inter.className, style: 'Inter, sans-serif' },
+  roboto: { name: 'Roboto', className: roboto.className, style: 'Roboto, sans-serif' },
+  googleSans: { name: 'Google Sans', className: '', style: '"Google Sans", "Product Sans", sans-serif' },
+  playfair: { name: 'Playfair Display', className: playfair.className, style: '"Playfair Display", serif' },
+  spaceMono: { name: 'Space Mono', className: spaceMono.className, style: '"Space Mono", monospace' },
+
+};
 
 const defaultConfig: AppConfig = {
   showManufacturer: true,
@@ -28,6 +47,8 @@ const defaultConfig: AppConfig = {
   location: "",
   customCopyright: "",
   exportFormat: "jpeg",
+  font: "inter",
+  fontWeight: "400",
 };
 
 export default function Home() {
@@ -42,18 +63,24 @@ export default function Home() {
   );
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const [isDragging, setIsDragging] = useState(false);
+  const [customFonts, setCustomFonts] = useState<{ name: string, style: string }[]>([]);
+  const [isFontSettingsOpen, setIsFontSettingsOpen] = useState(false);
+
   const handleReset = () => {
     setConfig(defaultConfig);
     localStorage.removeItem("emblematix_config");
   };
 
-  // Sync local state when global config changes (e.g., from localStorage)
   useEffect(() => {
-    setLocalLocation(config.location);
-    setLocalCustomCopyright(config.customCopyright);
-  }, [config.location, config.customCopyright]);
+    if (localLocation !== config.location) {
+      setLocalLocation(config.location);
+    }
+    if (localCustomCopyright !== config.customCopyright) {
+      setLocalCustomCopyright(config.customCopyright);
+    }
+  }, [config.location, config.customCopyright, localLocation, localCustomCopyright]);
 
-  // Load config from localStorage and detect browser on mount
   useEffect(() => {
     setMounted(true);
 
@@ -87,7 +114,29 @@ export default function Home() {
     }
   }, [config, mounted]);
 
+  useEffect(() => {
+    // Load persisted fonts
+    const loadFonts = async () => {
+      try {
+        const storedFonts = await getFonts();
+        for (const fontData of storedFonts) {
+          const fontFace = new FontFace(fontData.name, fontData.buffer);
+          await fontFace.load();
+          document.fonts.add(fontFace);
+          setCustomFonts(prev => {
+            if (prev.some(f => f.name === fontData.name)) return prev;
+            return [...prev, { name: fontData.name, style: fontData.name }];
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load persisted fonts:", error);
+      }
+    };
+    loadFonts();
+  }, []);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fontInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
 
@@ -130,7 +179,7 @@ export default function Home() {
       // Logic from Android getCopyRight()
       let copyrightString = "";
       let timeString = "";
-      
+
       if (exifData.dateTime) {
         // Android format: yyyy|MM/dd HH:mm:ss
         // ExifReader usually returns "yyyy:MM:dd HH:mm:ss"
@@ -138,31 +187,31 @@ export default function Home() {
         if (parts.length >= 2) {
           const dateParts = parts[0].split(":");
           const timePart = parts[1];
-          
+
           if (dateParts.length === 3) {
-             const year = dateParts[0];
-             const month = dateParts[1];
-             const day = dateParts[2];
-             
-             if (config.showDateTime) {
-               // Android: MM/dd HH:mm:ss
-               timeString = `${month}/${day} ${timePart}  `;
-             }
-             
-             if (config.showCopyright) {
-               const author = config.customCopyright || exifData.copyright || "";
-               if (author !== "") {
-                 // Android: Image © yyyy Author.
-                 copyrightString = `Image © ${year} ${author}.`;
-               }
-             }
+            const year = dateParts[0];
+            const month = dateParts[1];
+            const day = dateParts[2];
+
+            if (config.showDateTime) {
+              // Android: MM/dd HH:mm:ss
+              timeString = `${month}/${day} ${timePart}  `;
+            }
+
+            if (config.showCopyright) {
+              const author = config.customCopyright || exifData.copyright || "";
+              if (author !== "") {
+                // Android: Image © yyyy Author.
+                copyrightString = `Image © ${year} ${author}.`;
+              }
+            }
           }
         }
       } else if (config.showCopyright) {
-         const author = config.customCopyright || exifData.copyright || "";
-         if (author !== "") {
-            copyrightString = `Image © ${author}.`;
-         }
+        const author = config.customCopyright || exifData.copyright || "";
+        if (author !== "") {
+          copyrightString = `Image © ${author}.`;
+        }
       }
 
       const copyRightText = `${timeString}${copyrightString}`.trim();
@@ -174,20 +223,30 @@ export default function Home() {
 
       // Configure font
       const fontSize = Math.min(canvas.width, canvas.height) * (config.watermarkType === "normal" ? 0.03 : 0.02);
-      // Use a font that mimics Google Sans if possible, or fallback to sans-serif
-      ctx.font = `${fontSize}px sans-serif`;
-      
+      // Use selected font
+      let selectedFont = fonts[config.font as keyof typeof fonts];
+      if (!selectedFont) {
+        // Check custom fonts
+        const custom = customFonts.find(f => f.name === config.font);
+        if (custom) {
+          selectedFont = { ...custom, className: "" };
+        } else {
+          selectedFont = fonts.inter;
+        }
+      }
+      ctx.font = `${config.fontWeight} ${fontSize}px ${selectedFont.style}`;
+
       // Calculate positions
       // Android:
       // Normal: startHeight = bitmap.height * 0.9f
       // Compact: startHeight = bitmap.height - (paint.descent() - paint.ascent()) * 2
-      
+
       // Estimate ascent/descent ratio for standard fonts
       // ascent is usually around 0.8 * fontSize, descent around 0.2 * fontSize
       // line height (descent - ascent) is roughly fontSize * 1.2 (since ascent is negative in Android paint, but here we just use fontSize)
       // We'll use fontSize * 1.2 as the line height approximation
       const lineHeight = fontSize * 1.2;
-      
+
       let startY = 0;
       if (config.watermarkType === "normal") {
         startY = canvas.height * 0.9;
@@ -197,22 +256,22 @@ export default function Home() {
 
       const drawText = (context: CanvasRenderingContext2D, color?: string) => {
         if (color) context.fillStyle = color;
-        
+
         let currentY = startY;
-        
+
         if (config.watermarkType === "normal") {
           context.textAlign = "center";
           const startX = canvas.width / 2;
           lines.forEach((line) => {
-             context.fillText(line, startX, currentY);
-             currentY += lineHeight;
+            context.fillText(line, startX, currentY);
+            currentY += lineHeight;
           });
         } else {
           context.textAlign = "left";
           const startX = canvas.width * 0.01; // Android uses 0.01f
           lines.forEach((line) => {
-             context.fillText(line, startX, currentY);
-             currentY += lineHeight;
+            context.fillText(line, startX, currentY);
+            currentY += lineHeight;
           });
         }
       };
@@ -231,28 +290,37 @@ export default function Home() {
         const tempCtx = tempCanvas.getContext("2d");
         if (!tempCtx) return;
 
-        tempCtx.font = `${fontSize}px sans-serif`;
-        
+        let selectedFont = fonts[config.font as keyof typeof fonts];
+        if (!selectedFont) {
+          const custom = customFonts.find(f => f.name === config.font);
+          if (custom) {
+            selectedFont = { ...custom, className: "" };
+          } else {
+            selectedFont = fonts.inter;
+          }
+        }
+        tempCtx.font = `${config.fontWeight} ${fontSize}px ${selectedFont.style}`;
+
         // Draw black text for mask
         // We need to pass the context and let the helper function draw
         // But helper uses closure variables. We can just copy the logic or pass context.
         // Let's refactor drawText to take context.
-        
+
         tempCtx.fillStyle = "black";
         let currentY = startY;
         if (config.watermarkType === "normal") {
           tempCtx.textAlign = "center";
           const startX = canvas.width / 2;
           lines.forEach((line) => {
-             tempCtx.fillText(line, startX, currentY);
-             currentY += lineHeight;
+            tempCtx.fillText(line, startX, currentY);
+            currentY += lineHeight;
           });
         } else {
           tempCtx.textAlign = "left";
           const startX = canvas.width * 0.01;
           lines.forEach((line) => {
-             tempCtx.fillText(line, startX, currentY);
-             currentY += lineHeight;
+            tempCtx.fillText(line, startX, currentY);
+            currentY += lineHeight;
           });
         }
 
@@ -269,17 +337,17 @@ export default function Home() {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
-            
+
             // Calculate luminance
             const luminance = 0.3 * r + 0.59 * g + 0.11 * b;
-            
+
             let gain = 0;
             if (luminance > 160) {
               // Darken
-               gain = -Math.floor(Math.random() * 100);
+              gain = -Math.floor(Math.random() * 100);
             } else {
-               // Brighten
-               gain = Math.floor(Math.random() * 100);
+              // Brighten
+              gain = Math.floor(Math.random() * 100);
             }
 
             data[i] = Math.min(255, Math.max(0, r + gain));
@@ -287,7 +355,7 @@ export default function Home() {
             data[i + 2] = Math.min(255, Math.max(0, b + gain));
           }
         }
-        
+
         ctx.putImageData(imageData, 0, 0);
       }
 
@@ -305,18 +373,15 @@ export default function Home() {
         }
       }, "image/jpeg", 0.5);
     };
-  }, [image, exifData, config]);
+  }, [image, exifData, config, customFonts]);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     const imageUrl = URL.createObjectURL(file);
     setImage(imageUrl);
 
     try {
       const tags = await ExifReader.load(file);
-      
+
       // Process Focal Length
       let focalLength = tags["FocalLengthIn35mmFilm"]?.description;
       if (!focalLength) {
@@ -328,12 +393,12 @@ export default function Home() {
             const s = val.toString();
             const dotIndex = s.indexOf('.');
             if (dotIndex !== -1) {
-                focalLength = s.substring(0, Math.min(s.length, dotIndex + 3));
-                if (focalLength.endsWith('.')) {
-                    focalLength = focalLength.slice(0, -1);
-                }
+              focalLength = s.substring(0, Math.min(s.length, dotIndex + 3));
+              if (focalLength.endsWith('.')) {
+                focalLength = focalLength.slice(0, -1);
+              }
             } else {
-                focalLength = s;
+              focalLength = s;
             }
           } else {
             focalLength = fl;
@@ -346,7 +411,7 @@ export default function Home() {
       if (shutterSpeed) {
         const val = parseFloat(shutterSpeed);
         if (val < 1 && val > 0) {
-           shutterSpeed = `1/${Math.round(1/val)}`;
+          shutterSpeed = `1/${Math.round(1 / val)}`;
         }
       }
 
@@ -363,6 +428,69 @@ export default function Home() {
       setExifData(newExifData);
     } catch (error) {
       console.error("Error reading EXIF data:", error);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processFile(file);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      await processFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const fontName = file.name.split('.')[0];
+      const fontFace = new FontFace(fontName, buffer);
+
+      await fontFace.load();
+      document.fonts.add(fontFace);
+
+
+      // Persist font
+      await saveFont(fontName, buffer);
+
+      setCustomFonts(prev => [...prev, { name: fontName, style: fontName }]);
+      setConfig(prev => ({ ...prev, font: fontName }));
+    } catch (error) {
+      console.error("Failed to load font:", error);
+      alert("Failed to load font file.");
+    }
+  };
+
+  const handleDeleteFont = async (fontName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await deleteFont(fontName);
+      setCustomFonts(prev => prev.filter(f => f.name !== fontName));
+      if (config.font === fontName) {
+        setConfig(prev => ({ ...prev, font: "inter" }));
+      }
+    } catch (error) {
+      console.error("Failed to delete font:", error);
     }
   };
 
@@ -395,7 +523,7 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-4 md:pt-12 md:px-24 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50">
+    <main className="flex min-h-screen flex-col items-center p-4 md:pt-12 md:px-8 lg:px-12 xl:px-24 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50">
       <div className="z-10 max-w-6xl w-full items-center justify-between font-mono text-sm flex mb-6 md:mb-8">
         <p className="text-xl font-bold">
           Emblematix
@@ -419,7 +547,23 @@ export default function Home() {
 
       <div className="flex flex-col lg:flex-row w-full max-w-6xl gap-6 lg:gap-8 flex-grow items-start">
         {/* Image Preview Area */}
-        <div className="flex-1 flex flex-col items-center justify-center min-h-[300px] md:min-h-[640px] bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border border-neutral-200 dark:border-neutral-700 p-4 relative overflow-hidden w-full">
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          className={clsx(
+            "flex-1 flex flex-col items-center justify-center min-h-[300px] md:min-h-[500px] lg:min-h-[740px] bg-white dark:bg-neutral-800 rounded-2xl shadow-lg border-2 p-4 relative overflow-hidden w-full transition-colors",
+            isDragging
+              ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10"
+              : "border-neutral-200 dark:border-neutral-700"
+          )}
+        >
+          {isDragging && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm">
+              <Upload className="w-16 h-16 text-blue-500 mb-4 animate-bounce" />
+              <p className="text-xl font-bold text-blue-600 dark:text-blue-400">Drop image here</p>
+            </div>
+          )}
           {isProcessing && (
             <div className="absolute top-0 left-0 w-full h-1 bg-blue-200 dark:bg-blue-900/50 overflow-hidden rounded-t-2xl">
               <div className="progress-bar-indeterminate"></div>
@@ -430,13 +574,14 @@ export default function Home() {
             <img
               src={processedImage}
               alt="Preview"
-              className="max-w-full max-h-[60vh] lg:max-h-[80vh] object-contain shadow-sm cursor-pointer"
+              className="max-w-full max-h-[60vh] md:max-h-[75vh] lg:max-h-[80vh] object-contain shadow-sm cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
             />
           ) : (
             <div className="text-center p-8">
               <ImageIcon className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-4 text-neutral-400" />
               <p className="text-base md:text-lg font-medium text-neutral-500">No image selected</p>
+              <p className="text-sm text-neutral-400 mt-2">or drag and drop here</p>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium transition-colors flex items-center gap-2 mx-auto text-sm md:text-base"
@@ -484,7 +629,7 @@ export default function Home() {
                 <RotateCcw className="w-4 h-4" />
               </button>
             </div>
-            
+
             <div className="space-y-6">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Display Options</label>
@@ -621,6 +766,122 @@ export default function Home() {
                       {format.toUpperCase()}
                     </button>
                   ))}
+                </div>
+              </div>
+
+
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsFontSettingsOpen(!isFontSettingsOpen)}
+                  className="w-full flex items-center justify-between p-3 bg-neutral-100 dark:bg-neutral-700/50 rounded-xl hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                >
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Font Settings</span>
+                    <span className="text-sm font-medium text-neutral-900 dark:text-neutral-200">
+                      {(fonts[config.font as keyof typeof fonts]?.name || customFonts.find(f => f.name === config.font)?.name || config.font)}
+                      &nbsp;•&nbsp;
+                      {config.fontWeight === "300" ? "Light" : config.fontWeight === "500" ? "Medium" : "Normal"}
+                    </span>
+                  </div>
+                  <ChevronDown
+                    className={clsx(
+                      "w-5 h-5 text-neutral-500 transition-transform duration-300",
+                      isFontSettingsOpen ? "rotate-180" : "rotate-0"
+                    )}
+                  />
+                </button>
+
+                <div
+                  className={clsx(
+                    "grid transition-[grid-template-rows] duration-300 ease-in-out",
+                    isFontSettingsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                  )}
+                >
+                  <div className="overflow-hidden">
+                    <div className="p-4 bg-neutral-50 dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-700 space-y-6 mt-2">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Font Family</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(fonts).map(([key, { name, className }]) => (
+                            <button
+                              key={key}
+                              onClick={() => setConfig({ ...config, font: key })}
+                              className={clsx(
+                                "py-2 px-3 rounded-lg text-sm transition-colors text-left truncate",
+                                className,
+                                config.font === key
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-2 border-blue-200 dark:border-blue-800"
+                                  : "bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-2 border-transparent hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                              )}
+                            >
+                              {name}
+                            </button>
+                          ))}
+                          {customFonts.map((font) => (
+                            <div key={font.name} className="relative group">
+                              <button
+                                onClick={() => setConfig({ ...config, font: font.name })}
+                                className={clsx(
+                                  "w-full py-2 px-3 pr-8 rounded-lg text-sm transition-colors text-left truncate",
+                                  config.font === font.name
+                                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-2 border-blue-200 dark:border-blue-800"
+                                    : "bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-2 border-transparent hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                                )}
+                                style={{ fontFamily: font.style }}
+                              >
+                                {font.name}
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteFont(font.name, e)}
+                                className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-all"
+                                title="Delete font"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => fontInputRef.current?.click()}
+                            className="py-2 px-3 rounded-lg text-sm transition-colors text-center border-2 border-dashed border-neutral-300 dark:border-neutral-600 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 bg-transparent"
+                          >
+                            + Upload Font
+                          </button>
+                        </div>
+                        <input
+                          type="file"
+                          ref={fontInputRef}
+                          onChange={handleFontUpload}
+                          accept=".ttf,.otf,.woff,.woff2"
+                          className="hidden"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Weight</label>
+                        <div className="flex gap-2">
+                          {[
+                            { value: "300", label: "Light" },
+                            { value: "400", label: "Normal" },
+                            { value: "500", label: "Medium" },
+                          ].map((weight) => (
+                            <button
+                              key={weight.value}
+                              onClick={() => setConfig({ ...config, fontWeight: weight.value })}
+                              className={clsx(
+                                "flex-1 py-2 px-4 rounded-lg font-medium text-sm border transition-colors",
+                                config.fontWeight === weight.value
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800"
+                                  : "bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 border-transparent hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                              )}
+                            >
+                              {weight.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

@@ -25,4 +25,6 @@ export interface AppConfig {
   location: string;
   customCopyright: string;
   exportFormat: "jpeg" | "png" | "webp";
+  font: string;
+  fontWeight: string;
 }
