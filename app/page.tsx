@@ -271,15 +271,15 @@ export default function Home() {
             const b = data[i + 2];
             
             // Calculate luminance
-            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+            const luminance = 0.3 * r + 0.59 * g + 0.11 * b;
             
             let gain = 0;
-            if (luminance > 186) {
-               // Darken
-               gain = -Math.floor(Math.random() * Math.min(r, g, b, 100));
+            if (luminance > 160) {
+              // Darken
+               gain = -Math.floor(Math.random() * 100);
             } else {
                // Brighten
-               gain = Math.floor(Math.random() * Math.min(255 - r, 255 - g, 255 - b, 100));
+               gain = Math.floor(Math.random() * 100);
             }
 
             data[i] = Math.min(255, Math.max(0, r + gain));
