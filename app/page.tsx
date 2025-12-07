@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import ExifReader from "exifreader";
 import { ExifData, AppConfig } from "./types";
 import { saveFont, getFonts, deleteFont } from "./db";
@@ -425,9 +426,17 @@ export default function Home() {
         dateTime: tags["DateTimeOriginal"]?.description,
         copyright: tags["Copyright"]?.description,
       };
+
+      // Check if we have enough data
+      const hasData = Object.values(newExifData).some(val => val !== undefined && val !== "" && val !== null);
+      if (!hasData) {
+        toast.error("No EXIF data found in this image. Watermark info will be empty.");
+      }
+
       setExifData(newExifData);
     } catch (error) {
       console.error("Error reading EXIF data:", error);
+      toast.error("Failed to read EXIF data from image.");
     }
   };
 

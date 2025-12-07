@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import ViewportHandler from "@/components/ViewportHandler";
+import { Toaster } from "sonner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -34,6 +35,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <ViewportHandler />
         {children}
+        <Toaster position="top-center" />
       </body>
     </html>
   );
