@@ -25,11 +25,11 @@ const playfair = Playfair_Display({ subsets: ['latin'] });
 const spaceMono = Space_Mono({ weight: ['400', '700'], subsets: ['latin'] });
 
 const fonts = {
-  inter: { name: 'Inter', className: inter.className, style: 'Inter, sans-serif' },
-  roboto: { name: 'Roboto', className: roboto.className, style: 'Roboto, sans-serif' },
+  inter: { name: 'Inter', className: inter.className, style: inter.style.fontFamily },
+  roboto: { name: 'Roboto', className: roboto.className, style: roboto.style.fontFamily },
   googleSans: { name: 'Google Sans', className: '', style: '"Google Sans", "Product Sans", sans-serif' },
-  playfair: { name: 'Playfair Display', className: playfair.className, style: '"Playfair Display", serif' },
-  spaceMono: { name: 'Space Mono', className: spaceMono.className, style: '"Space Mono", monospace' },
+  playfair: { name: 'Playfair Display', className: playfair.className, style: playfair.style.fontFamily },
+  spaceMono: { name: 'Space Mono', className: spaceMono.className, style: spaceMono.style.fontFamily },
 
 };
 
@@ -144,6 +144,8 @@ export default function Home() {
   useEffect(() => {
     if (!image || !canvasRef.current) return;
 
+    let isCancelled = false;
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
@@ -152,6 +154,7 @@ export default function Home() {
     img.crossOrigin = "anonymous";
     img.src = image;
     img.onload = () => {
+      if (isCancelled) return;
       setIsProcessing(true);
       canvas.width = img.width;
       canvas.height = img.height;
@@ -362,6 +365,7 @@ export default function Home() {
 
       // Generate preview with lower quality for performance
       canvas.toBlob((blob) => {
+        if (isCancelled) return;
         if (blob) {
           const url = URL.createObjectURL(blob);
           setProcessedImage((prev) => {
@@ -373,6 +377,10 @@ export default function Home() {
           setIsProcessing(false);
         }
       }, "image/jpeg", 0.5);
+    };
+
+    return () => {
+      isCancelled = true;
     };
   }, [image, exifData, config, customFonts]);
 
@@ -403,7 +411,10 @@ export default function Home() {
       imageUrl = URL.createObjectURL(file);
     }
 
-    setImage(imageUrl);
+    setImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return imageUrl;
+    });
     setIsProcessing(false);
 
     try {
