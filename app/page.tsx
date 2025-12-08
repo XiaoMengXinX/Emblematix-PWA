@@ -711,25 +711,6 @@ export default function Home() {
         setConfig(prev => ({ ...prev, location: locationFromExif }));
         setLocalLocation(locationFromExif);
       }
-
-      // HDR Detection (only if enabled)
-      if (config.enableHDR) {
-        try {
-          const { extractHDRData } = await import('@/lib/hdr-utils');
-          const hdrResult = await extractHDRData(file, config.enableHDR);
-          setHDRData(hdrResult);
-
-          if (hdrResult.hasGainMap) {
-            toast.success('HDR image detected');
-          }
-        } catch (error) {
-          console.error('HDR detection failed:', error);
-          setHDRData({ hasGainMap: false });
-        }
-      } else {
-        // Reset HDR data if HDR is disabled
-        setHDRData({ hasGainMap: false });
-      }
     } catch (error) {
       console.error("Error reading EXIF data:", error);
       toast.error("Failed to read EXIF data from image.");
