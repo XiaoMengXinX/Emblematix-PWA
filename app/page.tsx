@@ -727,7 +727,7 @@ export default function Home() {
     if (!canvasRef.current) return;
 
     const format = config.exportFormat;
-    const mimeType = `image / ${format} `;
+    const mimeType = `image/${format}`;
     const quality = format === "jpeg" ? 0.99 : undefined;
 
     // Generate high quality image for download
@@ -736,7 +736,7 @@ export default function Home() {
         if (blob) {
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
-          link.download = `Emblematix_${Date.now()}.${format} `;
+          link.download = `Emblematix_${Date.now()}.${format}`;
           link.href = url;
           link.click();
           URL.revokeObjectURL(url);
