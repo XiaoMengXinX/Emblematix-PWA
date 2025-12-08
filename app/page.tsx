@@ -52,6 +52,8 @@ const defaultConfig: AppConfig = {
   fontWeight: "400",
   useCustomCopyright: false, // Default to using EXIF copyright
   useCustomLocation: false, // Default to using EXIF GPS location
+  enableHDR: false, // Experimental HDR support (disabled by default)
+  colorSpace: "srgb", // Experimental Color Space support (default: srgb)
 };
 
 export default function Home() {
@@ -70,6 +72,7 @@ export default function Home() {
   const [customFonts, setCustomFonts] = useState<{ name: string, style: string }[]>([]);
   const [isFontSettingsOpen, setIsFontSettingsOpen] = useState(false);
   const [isMetadataSettingsOpen, setIsMetadataSettingsOpen] = useState(false);
+  const [isExperimentalSettingsOpen, setIsExperimentalSettingsOpen] = useState(false);
 
   // Editable metadata state (session-only, not persisted)
   const [editableMetadata, setEditableMetadata] = useState<EditableMetadata>({
@@ -101,6 +104,9 @@ export default function Home() {
 
   // Track previous EXIF manufacturer/model for smart persistence
   const [prevManufacturerModel, setPrevManufacturerModel] = useState<{ manufacturer?: string, model?: string }>({});
+
+  // HDR state management
+  const [hdrData, setHDRData] = useState<import('@/app/types').HDRData>({ hasGainMap: false });
 
   const handleReset = () => {
     setConfig(defaultConfig);
@@ -259,7 +265,7 @@ export default function Home() {
     let isCancelled = false;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const ctx = canvas.getContext("2d", { willReadFrequently: true, colorSpace: config.colorSpace });
     if (!ctx) return;
 
     const img = new Image();
@@ -411,7 +417,7 @@ export default function Home() {
         const tempCanvas = document.createElement("canvas");
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
-        const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true });
+        const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true, colorSpace: config.colorSpace });
         if (!tempCtx) return;
 
         let selectedFont = fonts[config.font as keyof typeof fonts];
@@ -483,26 +489,74 @@ export default function Home() {
         ctx.putImageData(imageData, 0, 0);
       }
 
-      // Generate preview with lower quality for performance
-      canvas.toBlob((blob) => {
-        if (isCancelled) return;
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          setProcessedImage((prev) => {
-            if (prev) URL.revokeObjectURL(prev);
-            return url;
-          });
-          setIsProcessing(false);
-        } else {
-          setIsProcessing(false);
+      // Generate preview
+      // If HDR is enabled and we have gain map, generate HDR preview using WASM
+      // Otherwise generate standard SDR preview
+      const generatePreview = async () => {
+        if (config.enableHDR && hdrData.hasGainMap && hdrData.gainMapData && hdrData.metadata && hdrData.sdrImageData) {
+          try {
+            const { encodeHDRJPEG, insertICCProfile } = await import('@/lib/hdr-utils');
+
+            // Get watermarked SDR data
+            const sdrBlob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.8));
+            if (!sdrBlob) throw new Error("Failed to generate SDR blob");
+
+            const sdrBuffer = await sdrBlob.arrayBuffer() as ArrayBuffer;
+            let sdrData: Uint8Array = new Uint8Array(sdrBuffer);
+
+            // Inject ICC profile if P3
+            if (config.colorSpace === 'display-p3' && hdrData.iccProfile) {
+              sdrData = insertICCProfile(sdrData, hdrData.iccProfile);
+            }
+
+            // Encode HDR
+            const hdrJpeg = await encodeHDRJPEG(
+              sdrData,
+              hdrData.gainMapData,
+              hdrData.metadata,
+              config.colorSpace === 'display-p3' ? hdrData.iccProfile : undefined,
+              true
+            );
+
+            if (hdrJpeg && !isCancelled) {
+              const blob = new Blob([hdrJpeg as BlobPart], { type: 'image/jpeg' });
+              const url = URL.createObjectURL(blob);
+              setProcessedImage((prev) => {
+                if (prev) URL.revokeObjectURL(prev);
+                return url;
+              });
+              setIsProcessing(false);
+              return;
+            }
+          } catch (e) {
+            console.error("HDR Preview generation failed:", e);
+            // Fallback to SDR
+          }
         }
-      }, "image/jpeg", 0.5);
+
+        // Standard SDR Preview
+        canvas.toBlob((blob) => {
+          if (isCancelled) return;
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            setProcessedImage((prev) => {
+              if (prev) URL.revokeObjectURL(prev);
+              return url;
+            });
+            setIsProcessing(false);
+          } else {
+            setIsProcessing(false);
+          }
+        }, "image/jpeg", 0.5);
+      };
+
+      generatePreview();
     };
 
     return () => {
       isCancelled = true;
     };
-  }, [image, exifData, config, customFonts, editableMetadata]);
+  }, [image, exifData, config, customFonts, editableMetadata, hdrData]);
 
   const processFile = async (file: File) => {
     let imageUrl = "";
@@ -654,6 +708,25 @@ export default function Home() {
         setConfig(prev => ({ ...prev, location: locationFromExif }));
         setLocalLocation(locationFromExif);
       }
+
+      // HDR Detection (only if enabled)
+      if (config.enableHDR) {
+        try {
+          const { extractHDRData } = await import('@/lib/hdr-utils');
+          const hdrResult = await extractHDRData(file, config.enableHDR);
+          setHDRData(hdrResult);
+
+          if (hdrResult.hasGainMap) {
+            toast.success('HDR image detected');
+          }
+        } catch (error) {
+          console.error('HDR detection failed:', error);
+          setHDRData({ hasGainMap: false });
+        }
+      } else {
+        // Reset HDR data if HDR is disabled
+        setHDRData({ hasGainMap: false });
+      }
     } catch (error) {
       console.error("Error reading EXIF data:", error);
       toast.error("Failed to read EXIF data from image.");
@@ -723,10 +796,65 @@ export default function Home() {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!canvasRef.current) return;
 
     const format = config.exportFormat;
+
+    // Check if we should export as HDR JPEG
+    if (config.enableHDR && hdrData.hasGainMap && format === 'jpeg' && hdrData.metadata && hdrData.gainMapData && hdrData.sdrImageData) {
+      try {
+        const { encodeHDRJPEG } = await import('@/lib/hdr-utils');
+
+        // Encode as HDR JPEG using original SDR image + gain map
+        // NOTE: This exports WITHOUT watermark to preserve HDR information
+        // Get the processed image data from canvas (Watermarked SDR)
+        const watermarkedSdrBlob = await new Promise<Blob | null>((resolve) => {
+          canvasRef.current?.toBlob((blob) => resolve(blob), 'image/jpeg', 0.99);
+        });
+
+        if (!watermarkedSdrBlob) throw new Error('Failed to generate watermarked image');
+
+        const watermarkedSdrBuffer = await watermarkedSdrBlob.arrayBuffer();
+        let watermarkedSdrData: Uint8Array = new Uint8Array(watermarkedSdrBuffer);
+
+        // Inject original ICC profile if available AND we are in P3 mode
+        // If sRGB, we do NOT inject to avoid applying P3 profile to sRGB data (fixing color issues)
+        if (hdrData.iccProfile && config.colorSpace === 'display-p3') {
+          const { insertICCProfile } = await import('@/lib/hdr-utils');
+          watermarkedSdrData = insertICCProfile(watermarkedSdrData, hdrData.iccProfile);
+        } else {
+        }
+
+        // Encode as HDR JPEG using the watermarked SDR
+        const hdrJpeg = await encodeHDRJPEG(
+          watermarkedSdrData,
+          hdrData.gainMapData,
+          hdrData.metadata,
+          config.colorSpace === 'display-p3' ? hdrData.iccProfile : undefined, // Only pass ICC to encode HDR if P3
+          config.enableHDR
+        );
+
+        if (hdrJpeg) {
+          // Download HDR JPEG
+          const blob = new Blob([hdrJpeg.buffer as ArrayBuffer], { type: 'image/jpeg' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `Emblematix_HDR_${Date.now()}.jpeg`;
+          link.href = url;
+          link.click();
+          URL.revokeObjectURL(url);
+          toast.success('HDR image exported');
+          return;
+        }
+      } catch (error) {
+        console.error('HDR export failed:', error);
+        toast.error('HDR export failed, falling back to standard export');
+        // Fall through to standard export
+      }
+    }
+
+    // Standard export (non-HDR or fallback)
     const mimeType = `image/${format}`;
     const quality = format === "jpeg" ? 0.99 : undefined;
 
@@ -740,6 +868,7 @@ export default function Home() {
           link.href = url;
           link.click();
           URL.revokeObjectURL(url);
+          toast.success('Image exported');
         }
       },
       mimeType,
@@ -808,7 +937,13 @@ export default function Home() {
               <div className="progress-bar-indeterminate"></div>
             </div>
           )}
-          <canvas ref={canvasRef} className="hidden" />
+          <canvas key={config.colorSpace} ref={canvasRef} className="hidden" />
+          {/* HDR Badge */}
+          {config.enableHDR && hdrData.hasGainMap && (
+            <div className="absolute top-4 right-4 px-3 py-1.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-full text-xs font-bold shadow-lg z-10">
+              HDR
+            </div>
+          )}
           {processedImage ? (
             <img
               src={processedImage}
@@ -987,11 +1122,13 @@ export default function Home() {
                     <button
                       key={format}
                       onClick={() => setConfig({ ...config, exportFormat: format })}
+                      disabled={config.enableHDR && format !== "jpeg"}
                       className={clsx(
                         "flex-1 py-2 px-4 rounded-lg font-medium text-sm border transition-colors",
                         config.exportFormat === format
                           ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800"
-                          : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300 border-transparent hover:bg-neutral-200 dark:hover:bg-neutral-600"
+                          : "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300 border-transparent hover:bg-neutral-200 dark:hover:bg-neutral-600",
+                        config.enableHDR && format !== "jpeg" && "opacity-50 cursor-not-allowed"
                       )}
                     >
                       {format.toUpperCase()}
@@ -999,8 +1136,6 @@ export default function Home() {
                   ))}
                 </div>
               </div>
-
-
 
               <div className="space-y-2">
                 <button
@@ -1338,6 +1473,104 @@ export default function Home() {
                         <Check className="w-4 h-4" />
                       </button>
                     )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Experimental Features (Collapsed) */}
+              <div className="space-y-2 pt-4 border-t border-neutral-200 dark:border-neutral-800">
+                <button
+                  onClick={() => setIsExperimentalSettingsOpen(!isExperimentalSettingsOpen)}
+                  className="w-full flex items-center justify-between p-3 bg-neutral-100 dark:bg-neutral-700/50 rounded-xl hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                >
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium text-neutral-500 uppercase tracking-wider">Experimental Features</span>
+                  </div>
+                  <ChevronDown
+                    className={clsx(
+                      "w-5 h-5 text-neutral-500 transition-transform duration-300",
+                      isExperimentalSettingsOpen ? "rotate-180" : "rotate-0"
+                    )}
+                  />
+                </button>
+
+                <div
+                  className={clsx(
+                    "grid transition-[grid-template-rows] duration-300 ease-in-out",
+                    isExperimentalSettingsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                  )}
+                >
+                  <div className="overflow-hidden">
+                    <div className="flex flex-col gap-2 p-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-700 mt-2">
+                      {/* HDR Support Toggle */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium">HDR Support</span>
+                          <span className="text-xs text-neutral-500">
+                            Preserve gain map in HDR images
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const newEnableHDR = !config.enableHDR;
+                            setConfig({
+                              ...config,
+                              enableHDR: newEnableHDR,
+                              exportFormat: newEnableHDR ? "jpeg" : config.exportFormat
+                            });
+                          }}
+                          className={clsx(
+                            "relative w-12 h-6 rounded-full transition-colors",
+                            config.enableHDR
+                              ? "bg-blue-600"
+                              : "bg-neutral-300 dark:bg-neutral-600"
+                          )}
+                          aria-label="Toggle HDR Support"
+                        >
+                          <div
+                            className={clsx(
+                              "absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform",
+                              config.enableHDR ? "right-0.5" : "left-0.5"
+                            )}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Color Space Selector */}
+                      <div className="flex items-center justify-between border-t border-neutral-200 dark:border-neutral-700/50 pt-2 mt-1">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium">Color Space</span>
+                          <span className="text-xs text-neutral-500">
+                            Select export color space
+                          </span>
+                        </div>
+                        <div className="flex gap-1 bg-white dark:bg-neutral-800 rounded-lg p-1 border border-neutral-200 dark:border-neutral-600">
+                          <button
+                            onClick={() => setConfig({ ...config, colorSpace: "srgb" })}
+                            className={clsx(
+                              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                              config.colorSpace === "srgb"
+                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                            )}
+                          >
+                            sRGB
+                          </button>
+                          <button
+                            onClick={() => setConfig({ ...config, colorSpace: "display-p3" })}
+                            className={clsx(
+                              "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                              config.colorSpace === "display-p3"
+                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                            )}
+                          >
+                            Display P3
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
                   </div>
                 </div>
               </div>
