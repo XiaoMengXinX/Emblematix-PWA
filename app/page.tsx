@@ -107,6 +107,7 @@ export default function Home() {
 
   // HDR state management
   const [hdrData, setHDRData] = useState<import('@/app/types').HDRData>({ hasGainMap: false });
+  const [imgFile, setImgFile] = useState<File | null>(null);
 
   const handleReset = () => {
     setConfig(defaultConfig);
@@ -559,6 +560,8 @@ export default function Home() {
   }, [image, exifData, config, customFonts, editableMetadata, hdrData]);
 
   const processFile = async (file: File) => {
+    setIsProcessing(true);
+    setImgFile(file);
     let imageUrl = "";
 
     // Check if file is HEIC/HEIF
@@ -748,6 +751,34 @@ export default function Home() {
       await processFile(file);
     }
   };
+
+  // Effect to re-process HDR data when HDR toggle changes
+  useEffect(() => {
+    const reprocessHDR = async () => {
+      // Only proceed if we have a file loaded
+      if (!imgFile) return;
+
+      if (config.enableHDR) {
+        try {
+          const { extractHDRData } = await import('@/lib/hdr-utils');
+          const hdrResult = await extractHDRData(imgFile, true);
+          setHDRData(hdrResult);
+
+          if (hdrResult.hasGainMap) {
+            toast.success('HDR image detected');
+          }
+        } catch (error) {
+          console.error('HDR detection failed:', error);
+          setHDRData({ hasGainMap: false });
+        }
+      } else {
+        // Reset HDR data if HDR is disabled
+        setHDRData({ hasGainMap: false });
+      }
+    };
+
+    reprocessHDR();
+  }, [config.enableHDR, imgFile]);
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
