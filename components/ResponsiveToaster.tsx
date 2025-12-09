@@ -19,5 +19,12 @@ export default function ResponsiveToaster() {
         return () => window.removeEventListener("resize", checkMobile);
     }, []);
 
-    return <Toaster position={isMobile ? "bottom-center" : "top-center"} />;
+    return (
+        <Toaster
+            position="top-center"
+            toastOptions={{
+                style: isMobile ? { top: '5rem' } : undefined,
+            }}
+        />
+    );
 }
