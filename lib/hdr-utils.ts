@@ -189,7 +189,7 @@ export async function encodeHDRJPEG(
         const script = document.createElement('script');
         script.type = 'module';
         script.textContent = `
-          import libultrahdr from '/libultrahdr-esm.js';
+          import libultrahdr from 'https://cdn.jsdelivr.net/npm/@monogrid/gainmap-js@3.2.0/libultrahdr-wasm/build/libultrahdr-esm.js';
           window.libultrahdrModule = await libultrahdr();
           window.dispatchEvent(new Event('libultrahdr-loaded'));
         `;
