@@ -59,3 +59,10 @@ body {
   background-color: #3b82f6; /* blue-500 */
   animation: indeterminate-progress 1.5s infinite ease-out;
 }
+
+/* Mobile toast positioning - below fixed header */
+@media (max-width: 767px) {
+  [data-sonner-toaster] {
+    top: 5rem !important;
+  }
+}
