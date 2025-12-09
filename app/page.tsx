@@ -152,6 +152,9 @@ export default function Home() {
     // Reset to EXIF mode for Copyright and Location
     setLocalCustomCopyright(exifCopyright);
     setLocalLocation(exifLocation);
+
+    // Show success toast
+    toast.success("Configuration reset to default");
   };
 
   // Helper function to convert GPS coordinates to DMS format
@@ -208,6 +211,10 @@ export default function Home() {
         // If on Safari and saved format is webp, reset to jpeg
         if (isSafariBrowser && parsedConfig.exportFormat === "webp") {
           parsedConfig.exportFormat = "jpeg";
+        }
+        // If on Safari and saved color space is display-p3, reset to srgb
+        if (isSafariBrowser && parsedConfig.colorSpace === "display-p3") {
+          parsedConfig.colorSpace = "srgb";
         }
         setConfig((prev) => ({ ...prev, ...parsedConfig }));
       } catch (e) {
@@ -893,39 +900,45 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center p-4 md:pt-12 md:px-8 lg:px-12 xl:px-24 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50">
-      <div className="z-10 max-w-6xl w-full items-center justify-between font-mono text-sm flex mb-6 md:mb-8">
-        <p className="text-xl font-bold">
-          Emblematix
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleDownload}
-            disabled={!processedImage}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm shadow-sm hover:shadow-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-          >
-            <Download className="w-4 h-4" />
-            Save Image
-          </button>
-          <a
-            className="flex place-items-center gap-2 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-            href="https://github.com/XiaoMengXinX/Emblematix-PWA"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="GitHub"
-          >
-            <svg
-              viewBox="0 0 1024 1024"
-              className="w-6 h-6 fill-current"
-              xmlns="http://www.w3.org/2000/svg"
+    <main className="flex min-h-screen flex-col items-center md:p-4 md:pt-12 md:px-8 lg:px-12 xl:px-24 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50">
+      {/* Header - Fixed on mobile, static on desktop */}
+      <div className="fixed md:static top-0 left-0 right-0 z-50 bg-neutral-50 dark:bg-neutral-900 px-4 py-4 md:p-0 border-b md:border-b-0 border-neutral-200 dark:border-neutral-700 md:z-10 md:max-w-6xl md:w-full md:mb-6 lg:mb-8">
+        <div className="max-w-6xl mx-auto w-full items-center justify-between font-mono text-sm flex">
+          <p className="text-xl font-bold">
+            Emblematix
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleDownload}
+              disabled={!processedImage}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm shadow-sm hover:shadow-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
             >
-              <path d="M511.6 76.3C264.3 76.2 64 276.4 64 523.5 64 718.9 189.3 885 363.8 946c23.5 5.9 19.9-10.8 19.9-22.2v-77.5c-135.7 15.9-141.2-73.9-150.3-88.9C215 726 171.5 718 184.5 703c30.9-15.9 62.4 4 98.9 57.9 26.4 39.1 77.9 32.5 104 26 5.7-23.5 17.9-44.5 34.7-60.8-140.6-25.2-199.2-111-199.2-213 0-49.5 16.3-95 48.3-131.7-20.4-60.5 1.9-112.3 4.9-120 58.1-5.2 118.5 41.6 123.2 45.3 33-8.9 70.7-13.6 112.9-13.6 42.4 0 80.2 4.9 113.5 13.9 11.3-8.6 67.3-48.8 121.3-43.9 2.9 7.7 24.7 58.3 5.5 118 32.4 36.8 48.9 82.7 48.9 132.3 0 102.2-59 188.1-200 212.9a127.5 127.5 0 0 1 38.1 91v112.5c.8 9 0 17.9 15 17.9 177.1-59.7 304.6-227 304.6-424.1 0-247.2-200.4-447.3-447.3z" />
-            </svg>
-          </a>
+              <Download className="w-4 h-4" />
+              Save Image
+            </button>
+            <a
+              className="flex place-items-center gap-2 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+              href="https://github.com/XiaoMengXinX/Emblematix-PWA"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GitHub"
+            >
+              <svg
+                viewBox="0 0 1024 1024"
+                className="w-6 h-6 fill-current"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M511.6 76.3C264.3 76.2 64 276.4 64 523.5 64 718.9 189.3 885 363.8 946c23.5 5.9 19.9-10.8 19.9-22.2v-77.5c-135.7 15.9-141.2-73.9-150.3-88.9C215 726 171.5 718 184.5 703c30.9-15.9 62.4 4 98.9 57.9 26.4 39.1 77.9 32.5 104 26 5.7-23.5 17.9-44.5 34.7-60.8-140.6-25.2-199.2-111-199.2-213 0-49.5 16.3-95 48.3-131.7-20.4-60.5 1.9-112.3 4.9-120 58.1-5.2 118.5 41.6 123.2 45.3 33-8.9 70.7-13.6 112.9-13.6 42.4 0 80.2 4.9 113.5 13.9 11.3-8.6 67.3-48.8 121.3-43.9 2.9 7.7 24.7 58.3 5.5 118 32.4 36.8 48.9 82.7 48.9 132.3 0 102.2-59 188.1-200 212.9a127.5 127.5 0 0 1 38.1 91v112.5c.8 9 0 17.9 15 17.9 177.1-59.7 304.6-227 304.6-424.1 0-247.2-200.4-447.3-447.3z" />
+              </svg>
+            </a>
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row w-full max-w-6xl gap-6 lg:gap-8 flex-grow items-start">
+      {/* Spacer for fixed header on mobile */}
+      <div className="h-20 md:hidden" />
+
+      <div className="flex flex-col lg:flex-row w-full max-w-6xl gap-6 lg:gap-8 flex-grow items-start px-4 md:px-0">
         {/* Image Preview Area */}
         <div
           onDrop={handleDrop}
@@ -1569,13 +1582,17 @@ export default function Home() {
                             sRGB
                           </button>
                           <button
-                            onClick={() => setConfig({ ...config, colorSpace: "display-p3" })}
+                            onClick={() => !isSafari && setConfig({ ...config, colorSpace: "display-p3" })}
+                            disabled={isSafari}
                             className={clsx(
                               "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                              config.colorSpace === "display-p3"
-                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                                : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                              isSafari
+                                ? "text-neutral-400 dark:text-neutral-600 cursor-not-allowed opacity-50"
+                                : config.colorSpace === "display-p3"
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                  : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700"
                             )}
+                            title={isSafari ? "Display P3 is not supported on Safari" : ""}
                           >
                             Display P3
                           </button>
