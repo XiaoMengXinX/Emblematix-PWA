@@ -6,7 +6,7 @@ export default function ResponsiveToaster() {
     return (
         <Toaster
             position="top-center"
-            duration={1000}
+            duration={1500}
             richColors
         />
     );
