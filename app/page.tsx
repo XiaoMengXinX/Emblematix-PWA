@@ -19,18 +19,17 @@ import { saveFont, getFonts, deleteFont } from "./db";
 import clsx from "clsx";
 import { Inter, Roboto, Playfair_Display, Space_Mono } from 'next/font/google';
 
-const inter = Inter({ subsets: ['latin'] });
-const roboto = Roboto({ weight: ['400', '700'], subsets: ['latin'] });
-const playfair = Playfair_Display({ subsets: ['latin'] });
-const spaceMono = Space_Mono({ weight: ['400', '700'], subsets: ['latin'] });
+const inter = Inter({ weight: ['300', '400', '500'], subsets: ['latin'] });
+const roboto = Roboto({ weight: ['300', '400', '500'], subsets: ['latin'] });
+const playfair = Playfair_Display({ weight: ['400', '500'], subsets: ['latin'] });
+const spaceMono = Space_Mono({ weight: ['400'], subsets: ['latin'] });
 
 const fonts = {
   inter: { name: 'Inter', className: inter.className, style: inter.style.fontFamily },
+  googleSans: { name: 'Google Sans Flex', className: 'google-sans-flex', style: '"Google Sans Flex", sans-serif' },
   roboto: { name: 'Roboto', className: roboto.className, style: roboto.style.fontFamily },
-  googleSans: { name: 'Google Sans', className: '', style: '"Google Sans", "Product Sans", sans-serif' },
   playfair: { name: 'Playfair Display', className: playfair.className, style: playfair.style.fontFamily },
   spaceMono: { name: 'Space Mono', className: spaceMono.className, style: spaceMono.style.fontFamily },
-
 };
 
 const defaultConfig: AppConfig = {
@@ -373,6 +372,10 @@ export default function Home() {
         }
       }
       ctx.font = `${config.fontWeight} ${fontSize}px ${selectedFont.style}`;
+      // Only apply letter spacing for non-monospace fonts
+      // Check if font name contains 'mono' (case-insensitive)
+      const isMonoFont = config.font.toLowerCase().includes('mono');
+      ctx.letterSpacing = isMonoFont ? '0em' : '0.03em';
 
       // Calculate positions
       // Android:
@@ -438,6 +441,10 @@ export default function Home() {
           }
         }
         tempCtx.font = `${config.fontWeight} ${fontSize}px ${selectedFont.style}`;
+        // Only apply letter spacing for non-monospace fonts
+        // Check if font name contains 'mono' (case-insensitive)
+        const isMonoFont = config.font.toLowerCase().includes('mono');
+        tempCtx.letterSpacing = isMonoFont ? '0em' : '0.03em';
 
         // Draw black text for mask
 
@@ -633,6 +640,10 @@ export default function Home() {
             focalLength = fl;
           }
         }
+      }
+      // Remove all spaces from focal length
+      if (focalLength) {
+        focalLength = focalLength.replace(/\s/g, '');
       }
 
       // Process Shutter Speed

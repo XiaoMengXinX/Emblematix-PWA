@@ -36,6 +36,17 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.google-sans-flex {
+  font-family: "Google Sans Flex", sans-serif;
+  font-optical-sizing: auto;
+  font-style: normal;
+  font-variation-settings:
+    "slnt" 0,
+    "wdth" 100,
+    "GRAD" 0,
+    "ROND" 0;
+}
+
 @keyframes indeterminate-progress {
   0% {
     left: -35%;
