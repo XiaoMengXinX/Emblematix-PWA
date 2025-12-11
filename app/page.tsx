@@ -440,9 +440,6 @@ export default function Home() {
         tempCtx.font = `${config.fontWeight} ${fontSize}px ${selectedFont.style}`;
 
         // Draw black text for mask
-        // We need to pass the context and let the helper function draw
-        // But helper uses closure variables. We can just copy the logic or pass context.
-        // Let's refactor drawText to take context.
 
         tempCtx.fillStyle = "black";
         let currentY = startY;
@@ -476,21 +473,31 @@ export default function Home() {
             const g = data[i + 1];
             const b = data[i + 2];
 
-            // Calculate luminance
-            const luminance = 0.3 * r + 0.59 * g + 0.11 * b;
+            // Calculate relative luminance using sRGB to linear RGB conversion
+            // This matches Android's Color.luminance implementation
+            const toLinear = (c: number) => {
+              const normalized = c / 255;
+              return normalized <= 0.04045
+                ? normalized / 12.92
+                : Math.pow((normalized + 0.055) / 1.055, 2.4);
+            };
+
+            const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
 
             let gain = 0;
-            if (luminance > 160) {
-              // Darken
-              gain = -Math.floor(Math.random() * 100);
+            if (luminance > 0.5) {
+              // Darken: limit gain to avoid going below 0
+              const maxDarken = Math.min(r, g, b, 100);
+              gain = -Math.floor(Math.random() * (maxDarken + 1));
             } else {
-              // Brighten
-              gain = Math.floor(Math.random() * 100);
+              // Brighten: limit gain to avoid going above 255
+              const maxBrighten = Math.min(255 - r, 255 - g, 255 - b, 100);
+              gain = Math.floor(Math.random() * (maxBrighten + 1));
             }
 
-            data[i] = Math.min(255, Math.max(0, r + gain));
-            data[i + 1] = Math.min(255, Math.max(0, g + gain));
-            data[i + 2] = Math.min(255, Math.max(0, b + gain));
+            data[i] = r + gain;
+            data[i + 1] = g + gain;
+            data[i + 2] = b + gain;
           }
         }
 
@@ -775,7 +782,16 @@ export default function Home() {
 
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    setIsDragging(false);
+    // Only set isDragging to false if we're actually leaving the drop zone
+    // Check if the relatedTarget is not a child of the current target
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+
+    // If mouse is outside the drop zone bounds, set isDragging to false
+    if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+      setIsDragging(false);
+    }
   };
 
   const handleFontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
