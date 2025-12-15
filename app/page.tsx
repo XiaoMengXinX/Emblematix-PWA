@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import ExifReader from "exifreader";
@@ -72,6 +73,7 @@ export default function Home() {
   const [isFontSettingsOpen, setIsFontSettingsOpen] = useState(false);
   const [isMetadataSettingsOpen, setIsMetadataSettingsOpen] = useState(false);
   const [isExperimentalSettingsOpen, setIsExperimentalSettingsOpen] = useState(false);
+  const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
 
   // Editable metadata state (session-only, not persisted)
   const [editableMetadata, setEditableMetadata] = useState<EditableMetadata>({
@@ -261,9 +263,26 @@ export default function Home() {
     loadFonts();
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (saveMenuRef.current && !saveMenuRef.current.contains(event.target as Node)) {
+        setIsSaveMenuOpen(false);
+      }
+    };
+
+    if (isSaveMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isSaveMenuOpen]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fontInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const saveMenuRef = useRef<HTMLDivElement>(null);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -842,6 +861,40 @@ export default function Home() {
     }
   };
 
+  const handleCopyImage = async () => {
+    if (!canvasRef.current) return;
+
+    try {
+      // Check if Clipboard API is available
+      if (!navigator.clipboard || !navigator.clipboard.write) {
+        toast.error('Clipboard API not available. Please use HTTPS or a supported browser.');
+        return;
+      }
+
+      // Convert canvas to blob
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvasRef.current?.toBlob((blob) => resolve(blob), 'image/png');
+      });
+
+      if (!blob) {
+        toast.error('Failed to copy image');
+        return;
+      }
+
+      // Copy to clipboard
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'image/png': blob
+        })
+      ]);
+
+      toast.success('Image copied to clipboard');
+    } catch (error) {
+      console.error('Failed to copy image:', error);
+      toast.error('Failed to copy image to clipboard');
+    }
+  };
+
   const handleDownload = async () => {
     if (!canvasRef.current) return;
 
@@ -935,14 +988,38 @@ export default function Home() {
             Emblematix
           </p>
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleDownload}
-              disabled={!processedImage}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm shadow-sm hover:shadow-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-            >
-              <Download className="w-4 h-4" />
-              Save Image
-            </button>
+            <div className="relative inline-flex" ref={saveMenuRef}>
+              <button
+                onClick={handleDownload}
+                disabled={!processedImage}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-l-lg font-medium text-sm shadow-sm hover:shadow-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+              >
+                <Download className="w-4 h-4" />
+                Save Image
+              </button>
+              <button
+                onClick={() => setIsSaveMenuOpen(!isSaveMenuOpen)}
+                disabled={!processedImage}
+                className="px-2 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-r-lg font-medium text-sm shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+                aria-label="More options"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              {isSaveMenuOpen && processedImage && (
+                <div className="absolute left-0 top-full mt-1 w-full bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50">
+                  <button
+                    onClick={() => {
+                      handleCopyImage();
+                      setIsSaveMenuOpen(false);
+                    }}
+                    className="w-full px-4 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-700 flex items-center gap-2 text-neutral-900 dark:text-neutral-50"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy Image
+                  </button>
+                </div>
+              )}
+            </div>
             <a
               className="flex place-items-center gap-2 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
               href="https://github.com/XiaoMengXinX/Emblematix-PWA"
