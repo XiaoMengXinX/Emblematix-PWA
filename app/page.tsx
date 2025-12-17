@@ -871,20 +871,19 @@ export default function Home() {
         return;
       }
 
-      // Convert canvas to blob
-      const blob = await new Promise<Blob | null>((resolve) => {
+      // iOS Safari requires a Promise that resolves to a Blob for ClipboardItem
+      // to maintain the user interaction context. 
+      // We pass the Promise directly to the constructor.
+      const blobPromise = new Promise<Blob | null>((resolve) => {
         canvasRef.current?.toBlob((blob) => resolve(blob), 'image/png');
       });
 
-      if (!blob) {
-        toast.error('Failed to copy image');
-        return;
-      }
-
-      // Copy to clipboard
+      // Use 'as any' for the blob promise because TypeScript definitions for ClipboardItem 
+      // might not yet explicitly include Promise<Blob> in all environments, 
+      // although standard browsers support it.
       await navigator.clipboard.write([
         new ClipboardItem({
-          'image/png': blob
+          'image/png': blobPromise as any
         })
       ]);
 
